@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Callbacks;
 using UnityEditor.Compilation;
 using UnityEngine;
@@ -20,6 +21,78 @@ namespace F8Framework.Core.Editor
     {
         string Id { get; }
         F8EditorPipelineStepResult Execute(F8EditorPipelineContext context);
+    }
+
+    /// <summary>
+    /// 将同步构建操作中的 Error / Assert / Exception 日志视为失败。
+    /// 部分 Unity 和第三方构建 API 只记录错误而不抛异常，不能仅依靠返回值判断成功。
+    /// </summary>
+    public static class F8BuildGuard
+    {
+        public static void Run(string operationName, Action action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException(nameof(action));
+            }
+
+            Run(operationName, () =>
+            {
+                action();
+                return true;
+            });
+        }
+
+        public static T Run<T>(string operationName, Func<T> action)
+        {
+            if (action == null)
+            {
+                throw new ArgumentNullException(nameof(action));
+            }
+
+            object sync = new object();
+            int errorCount = 0;
+            string firstError = null;
+            Application.LogCallback callback = (message, stackTrace, type) =>
+            {
+                if (type != LogType.Error && type != LogType.Assert && type != LogType.Exception)
+                {
+                    return;
+                }
+
+                lock (sync)
+                {
+                    errorCount++;
+                    if (firstError == null)
+                    {
+                        firstError = message;
+                    }
+                }
+            };
+
+            T result;
+            Application.logMessageReceivedThreaded += callback;
+            try
+            {
+                result = action();
+            }
+            finally
+            {
+                Application.logMessageReceivedThreaded -= callback;
+            }
+
+            lock (sync)
+            {
+                if (errorCount > 0)
+                {
+                    throw new BuildFailedException(
+                        $"{operationName}失败，检测到 {errorCount} 条错误日志，已停止后续步骤。\n" +
+                        $"首条错误：{firstError}\n请查看 Console / Editor.log 中的详细错误，修复后重试。");
+                }
+            }
+
+            return result;
+        }
     }
 
     [Serializable]
@@ -376,7 +449,8 @@ namespace F8Framework.Core.Editor
                         state.PipelineId,
                         state.DisplayName,
                         definition);
-                    F8EditorPipelineStepResult result = handler.Execute(context);
+                    F8EditorPipelineStepResult result = F8BuildGuard.Run(
+                        definition.DisplayName, () => handler.Execute(context));
 
                     state.NextStepIndex++;
                     if (result == F8EditorPipelineStepResult.RequestScriptReload)

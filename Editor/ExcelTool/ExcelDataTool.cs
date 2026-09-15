@@ -255,7 +255,8 @@ namespace F8Framework.ExcelData.Editor
         {
             string extension = Path.GetExtension(path);
             return (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase)) &&
+                    string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase)) &&
                    !Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal);
         }
 
@@ -487,7 +488,9 @@ namespace F8Framework.ExcelData.Editor
                 string extension = Path.GetExtension(inputPath);
                 if (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
                     excelReader = ExcelReaderFactory.CreateBinaryReader(stream);
-                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
+                // xlsx 和 xlsm 使用相同的 Open XML 表格结构，仅读取数据，不执行宏。
+                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase))
                     excelReader = ExcelReaderFactory.CreateOpenXmlReader(stream);
                 if (excelReader == null || !excelReader.IsValid)
                 {

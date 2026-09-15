@@ -1,10 +1,10 @@
-﻿/*
- * Thanks to gr0ss for the inspiration.
- * 
- * https://github.com/gr0ss/RegistryMonitor
- * 
- * 11/08/2019
- */
+﻿// /*
+//  * Thanks to gr0ss for the inspiration.
+//  *
+//  * https://github.com/gr0ss/RegistryMonitor
+//  *
+//  * 11/08/2019
+//  */
 
 using System;
 using System.ComponentModel;

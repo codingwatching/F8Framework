@@ -1,8 +1,11 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
+using UnityEditor.Build;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace F8Framework.Core.Editor.Tests
 {
@@ -13,6 +16,7 @@ namespace F8Framework.Core.Editor.Tests
         {
             F8EditorPipeline.CancelPending();
             CompletedTestStep.ExecutionCount = 0;
+            ErrorLogTestStep.ShouldFail = true;
         }
 
         [TearDown]
@@ -127,6 +131,89 @@ namespace F8Framework.Core.Editor.Tests
 
             Assert.AreEqual("Temporary State", F8EditorPipeline.PendingPipelineName);
             Assert.IsTrue(F8EditorPipeline.CancelPending());
+        }
+
+        [TestCase(LogType.Error)]
+        [TestCase(LogType.Assert)]
+        public void ErrorLogFailsGuardEvenWhenActionReturnsNormally(LogType type)
+        {
+            LogAssert.Expect(type, "Failed to compile player scripts");
+            BuildFailedException exception = Assert.Throws<BuildFailedException>(() =>
+                F8BuildGuard.Run("Compile DLL", () =>
+                {
+                    Debug.unityLogger.Log(type, "Failed to compile player scripts");
+                    return 123;
+                }));
+
+            StringAssert.Contains("Compile DLL", exception.Message);
+            StringAssert.Contains("Failed to compile player scripts", exception.Message);
+            Assert.AreEqual(456, F8BuildGuard.Run("Next operation", () => 456));
+        }
+
+        [Test]
+        public void GuardIgnoresWarningsAndEarlierErrors()
+        {
+            LogAssert.Expect(LogType.Error, "Earlier error");
+            Debug.LogError("Earlier error");
+            LogAssert.Expect(LogType.Warning, "Warning only");
+            Assert.DoesNotThrow(() => F8BuildGuard.Run("Warning test", () =>
+                Debug.LogWarning("Warning only")));
+        }
+
+        [Test]
+        public void GuardPreservesThrownExceptionAndCanRunAgain()
+        {
+            var expected = new IOException("Copy failed");
+            Assert.AreSame(expected, Assert.Throws<IOException>(() =>
+                F8BuildGuard.Run("Copy", (System.Action)(() => { throw expected; }))));
+            Assert.AreEqual(1, F8BuildGuard.Run("Retry", () => 1));
+        }
+
+        [Test]
+        public void LoggedExceptionFailsGuard()
+        {
+            LogAssert.Expect(LogType.Exception, new Regex("InvalidOperationException: Compile failed"));
+            Assert.Throws<BuildFailedException>(() => F8BuildGuard.Run("Compile", () =>
+                Debug.LogException(new System.InvalidOperationException("Compile failed"))));
+        }
+
+        [Test]
+        public void ErrorLogStopsPipelinePersistsFailedStepAndAllowsRetry()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(StatePath));
+            File.WriteAllText(StatePath,
+                "{\"Version\":1,\"PipelineId\":\"test-error\",\"DisplayName\":\"Compile Test\"," +
+                "\"Steps\":[{\"Id\":\"" + ErrorLogTestStep.StepId + "\",\"DisplayName\":\"Compile DLL\"}," +
+                "{\"Id\":\"" + CompletedTestStep.StepId + "\",\"DisplayName\":\"Publish\"}]," +
+                "\"NextStepIndex\":0}");
+
+            LogAssert.Expect(LogType.Error, "Failed to compile player scripts");
+            LogAssert.Expect(LogType.Exception, new Regex("BuildFailedException:"));
+            Assert.Throws<BuildFailedException>(() => F8EditorPipeline.ResumePending(true));
+
+            Assert.AreEqual(0, CompletedTestStep.ExecutionCount, "失败后不能发布热更新包");
+            string failedState = File.ReadAllText(StatePath);
+            StringAssert.Contains("\"Failed\": true", failedState);
+            StringAssert.Contains("\"NextStepIndex\": 0", failedState);
+            StringAssert.Contains("Failed to compile player scripts", failedState);
+
+            ErrorLogTestStep.ShouldFail = false;
+            Assert.IsTrue(F8EditorPipeline.RetryFailed());
+            Assert.AreEqual(1, CompletedTestStep.ExecutionCount);
+            Assert.IsFalse(F8EditorPipeline.HasPendingPipeline);
+        }
+
+        public sealed class ErrorLogTestStep : IF8EditorPipelineStep
+        {
+            public const string StepId = "f8.tests.error-log";
+            public static bool ShouldFail = true;
+            public string Id => StepId;
+
+            public F8EditorPipelineStepResult Execute(F8EditorPipelineContext context)
+            {
+                if (ShouldFail) Debug.LogError("Failed to compile player scripts");
+                return F8EditorPipelineStepResult.Completed;
+            }
         }
 
         private static string StatePath => Path.GetFullPath(Path.Combine(

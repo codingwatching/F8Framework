@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
 using System;
 using System.Collections;
@@ -163,7 +163,8 @@ namespace F8Framework.ExcelData
         {
             string extension = Path.GetExtension(path);
             return (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase)) &&
+                    string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase)) &&
                    !Path.GetFileName(path).StartsWith("~$", StringComparison.Ordinal);
         }
 
@@ -197,7 +198,9 @@ namespace F8Framework.ExcelData
                     byte[] excelData = SyncStreamingAssetsLoader.Instance.LoadBytes(inputPath);
                     excelReader = ExcelReaderFactory.CreateBinaryReader(excelData);
                 }
-                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
+                // xlsx 和 xlsm 使用相同的 Open XML 表格结构，仅读取数据，不执行宏。
+                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase))
                 {
                     byte[] excelData = SyncStreamingAssetsLoader.Instance.LoadBytes(inputPath);
                     excelReader = ExcelReaderFactory.CreateOpenXmlReader(excelData);
@@ -207,7 +210,8 @@ namespace F8Framework.ExcelData
 
                 if (string.Equals(extension, ".xls", StringComparison.OrdinalIgnoreCase))
                     excelReader = ExcelReaderFactory.CreateBinaryReader(stream);
-                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(extension, ".xlsx", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(extension, ".xlsm", StringComparison.OrdinalIgnoreCase))
                     excelReader = ExcelReaderFactory.CreateOpenXmlReader(stream);
 #endif
                 if (excelReader == null || !excelReader.IsValid)
